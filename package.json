@@ -4,7 +4,7 @@
   "scripts": {
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "dev": "wrangler dev --env dev",
-    "deploy": "wrangler deploy --minify",
+    "deploy": "wrangler deploy --minify --env=''",
     "format": "prettier --write .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
