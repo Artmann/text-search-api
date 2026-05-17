@@ -1,4 +1,5 @@
 import type { ErrorHandler } from 'hono'
+import { HTTPException } from 'hono/http-exception'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 
 import type { AppEnv } from './types'
@@ -22,7 +23,11 @@ export const handleError: ErrorHandler<AppEnv> = (error, context) => {
     )
   }
 
-  if (error instanceof SyntaxError) {
+  if (
+    error instanceof SyntaxError ||
+    (error instanceof HTTPException &&
+      error.message === 'Malformed JSON in request body')
+  ) {
     return context.json(
       {
         error: 'invalid_json',
@@ -30,6 +35,10 @@ export const handleError: ErrorHandler<AppEnv> = (error, context) => {
       },
       400
     )
+  }
+
+  if (error instanceof HTTPException) {
+    return error.getResponse()
   }
 
   console.error(error)
