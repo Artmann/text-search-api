@@ -1,9 +1,19 @@
 import { Hono } from 'hono'
 
-const app = new Hono()
+import { handleError } from './errors'
+import { requireAuth, validateNamespace } from './middleware'
+import { upsertDocument } from './routes/documents'
+import { search } from './routes/search'
+import type { AppEnv } from './types'
 
-app.get('/', (c) => {
-  return c.text('Hello Hono!')
-})
+const app = new Hono<AppEnv>()
+
+app.onError(handleError)
+
+app.use('*', requireAuth)
+app.use('/:namespace/*', validateNamespace)
+
+app.put('/:namespace/documents/:key', ...upsertDocument)
+app.post('/:namespace/search', ...search)
 
 export default app

@@ -3,15 +3,20 @@
   "type": "module",
   "scripts": {
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --env dev",
     "deploy": "wrangler deploy --minify",
+    "test": "vitest run",
     "format": "prettier --write ."
   },
   "dependencies": {
-    "hono": "^4.12.19"
+    "@hono/zod-validator": "^0.8.0",
+    "hono": "^4.12.19",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.16.6",
     "prettier": "^3.8.3",
-    "wrangler": "^4.4.0"
+    "vitest": "^4.1.6",
+    "wrangler": "^4.92.0"
   }
 }
