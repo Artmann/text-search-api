@@ -1,7 +1,12 @@
 import { zValidator } from '@hono/zod-validator'
 import { createFactory } from 'hono/factory'
+import invariant from 'tiny-invariant'
 
-import { embed } from '../embed'
+import {
+  formatId,
+  fromStoredVector,
+  toStoredVector
+} from '../documents/encoder'
 import { ApiError } from '../errors'
 import { onValidationError, upsertBodySchema } from '../schemas'
 import type { AppEnv } from '../types'
@@ -9,63 +14,44 @@ import type { AppEnv } from '../types'
 const factory = createFactory<AppEnv>()
 
 export const getDocument = factory.createHandlers(async (context) => {
-  const ns = context.req.param('namespace')
+  const namespace = context.req.param('namespace')
   const key = context.req.param('key')
-  const id = `${ns}:${key}`
+  invariant(namespace, 'namespace param is required by the route pattern')
+  invariant(key, 'key param is required by the route pattern')
 
-  const [vector] = await context.env.VECTORIZE.getByIds([id])
+  const [vector] = await context.env.VECTORIZE.getByIds([formatId(namespace, key)])
 
   if (!vector) {
     throw new ApiError(
       404,
       'not_found',
-      `No document at /${ns}/documents/${key}. Upsert it first with PUT.`
+      `No document at /${namespace}/documents/${key}. Upsert it first with PUT.`
     )
   }
 
-  const metadata = vector.metadata ?? {}
-  const { title, content, ...rest } = metadata as Record<string, unknown>
-
-  return context.json({
-    document: {
-      namespace: ns,
-      key,
-      title,
-      content,
-      metadata: rest
-    }
-  })
+  return context.json({ document: fromStoredVector(vector) })
 })
 
 export const upsertDocument = factory.createHandlers(
   zValidator('json', upsertBodySchema, onValidationError),
   async (context) => {
-    const ns = context.req.param('namespace')
+    const namespace = context.req.param('namespace')
     const key = context.req.param('key')
-    const { title, content, metadata } = context.req.valid('json')
+    invariant(namespace, 'namespace param is required by the route pattern')
+    invariant(key, 'key param is required by the route pattern')
 
-    const truncatedTitle = title.length > 100 ? title.slice(0, 100) : title
-    const truncatedContent =
-      content.length > 5_000 ? content.slice(0, 5_000) : content
+    const { content, metadata, title } = context.req.valid('json')
 
-    const values = await embed(
-      context.env.AI,
-      `${truncatedTitle}\n\n${truncatedContent}`
-    )
+    const vector = await toStoredVector(context.env.AI, {
+      content,
+      key,
+      metadata,
+      namespace,
+      title
+    })
 
-    await context.env.VECTORIZE.upsert([
-      {
-        id: `${ns}:${key}`,
-        values,
-        namespace: ns,
-        metadata: {
-          title: truncatedTitle,
-          content: truncatedContent,
-          ...(metadata ?? {})
-        }
-      }
-    ])
+    await context.env.VECTORIZE.upsert([vector])
 
-    return context.json({ namespace: ns, key, status: 'upserted' })
+    return context.json({ key, namespace, status: 'upserted' })
   }
 )

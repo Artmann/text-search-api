@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { embedModelName } from '../embed'
+import { embedModelName } from '../documents/encoder'
 import {
   callRoute,
   createTestEnv,
@@ -224,6 +224,20 @@ describe('PUT /:namespace/documents/:key', () => {
     expect(((await response.json()) as ErrorBody).error).toEqual(
       'invalid_namespace'
     )
+  })
+
+  it('rejects a key containing ":"', async () => {
+    const response = await putDocument(env, 'posts', 'bad:key', {
+      title: 'T',
+      content: 'C'
+    })
+
+    expect(response.status).toEqual(400)
+    const body = (await response.json()) as ErrorBody
+    expect(body.error).toEqual('invalid_body')
+    expect(body.message).toContain('key')
+    expect(body.message).toContain('":"')
+    expect(env.VECTORIZE.store.size).toEqual(0)
   })
 
   it('returns 500 when the AI embedding call fails', async () => {

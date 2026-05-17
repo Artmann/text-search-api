@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { embedModelName } from '../embed'
+import { embedModelName } from '../documents/encoder'
 import {
   callRoute,
   createTestEnv,
