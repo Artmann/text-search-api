@@ -6,22 +6,22 @@ import {
 import { afterEach, describe, expect, it } from 'vitest'
 import app from './index'
 
-const TOKEN = 'test-token'
+const token = 'test-token'
 const created: Array<{ ns: string; key: string }> = []
 
 async function call(path: string, init: RequestInit = {}) {
-  const req = new Request(`http://test${path}`, {
+  const request = new Request(`http://test${path}`, {
     ...init,
     headers: {
-      Authorization: `Bearer ${TOKEN}`,
+      Authorization: `Bearer ${token}`,
       'content-type': 'application/json',
       ...(init.headers ?? {})
     }
   })
   const ctx = createExecutionContext()
-  const res = await app.fetch(req, env, ctx)
+  const response = await app.fetch(request, env, ctx)
   await waitOnExecutionContext(ctx)
-  return res
+  return response
 }
 
 async function upsert(ns: string, key: string, body: object) {
@@ -32,8 +32,43 @@ async function upsert(ns: string, key: string, body: object) {
   })
 }
 
+async function search<T = unknown>(ns: string, query: object): Promise<T> {
+  const response = await call(`/${ns}/search`, {
+    method: 'POST',
+    body: JSON.stringify(query)
+  })
+  return (await response.json()) as T
+}
+
+// Vectorize writes are eventually consistent — upserts can take several
+// seconds to be queryable. Poll the search endpoint until the predicate is
+// satisfied or we give up.
+async function searchUntil<T extends { matches: unknown[] }>(
+  ns: string,
+  query: object,
+  predicate: (body: T) => boolean,
+  options: { attempts?: number; delayMs?: number } = {}
+): Promise<T> {
+  const attempts = options.attempts ?? 30
+  const delayMs = options.delayMs ?? 1000
+  let last: T = { matches: [] } as unknown as T
+
+  for (let i = 0; i < attempts; i++) {
+    last = await search<T>(ns, query)
+    if (predicate(last)) {
+      return last
+    }
+    await new Promise((resolve) => setTimeout(resolve, delayMs))
+  }
+
+  return last
+}
+
 afterEach(async () => {
-  if (created.length === 0) return
+  if (created.length === 0) {
+    return
+  }
+
   await env.VECTORIZE.deleteByIds(created.map((c) => `${c.ns}:${c.key}`))
   created.length = 0
 })
@@ -41,23 +76,23 @@ afterEach(async () => {
 describe('text-search-api', () => {
   it('upserts a document and finds it via semantic search', async () => {
     const ns = `test-${crypto.randomUUID()}`
-    const up = await upsert(ns, 'post-1', {
+    const upsertResponse = await upsert(ns, 'post-1', {
       title: 'Hybrid search on Cloudflare',
       content:
         'Using Workers AI and Vectorize together to build a small search API.',
       metadata: { type: 'blog' }
     })
-    expect(up.status).toBe(200)
+    expect(upsertResponse.status).toEqual(200)
 
-    const res = await call(`/${ns}/search`, {
-      method: 'POST',
-      body: JSON.stringify({ query: 'semantic search with cloudflare' })
-    })
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as {
+    const body = await searchUntil<{
       matches: Array<{ key: string; score: number }>
-    }
-    expect(body.matches[0]?.key).toBe('post-1')
+    }>(
+      ns,
+      { query: 'semantic search with cloudflare' },
+      (b) => b.matches.length > 0
+    )
+
+    expect(body.matches[0]?.key).toEqual('post-1')
     expect(body.matches[0]?.score).toBeGreaterThan(0.5)
   })
 
@@ -73,41 +108,39 @@ describe('text-search-api', () => {
       content: 'bananas are yellow fruits'
     })
 
-    const inA = (await (
-      await call(`/${a}/search`, {
-        method: 'POST',
-        body: JSON.stringify({ query: 'apple' })
-      })
-    ).json()) as { matches: Array<{ title: string }> }
-    expect(inA.matches.map((m) => m.title)).toEqual(['A'])
+    const inA = await searchUntil<{ matches: Array<{ title: string }> }>(
+      a,
+      { query: 'apple' },
+      (body) => body.matches.length > 0
+    )
+    expect(inA.matches.map((match) => match.title)).toEqual(['A'])
 
-    const inB = (await (
-      await call(`/${b}/search`, {
-        method: 'POST',
-        body: JSON.stringify({ query: 'banana' })
-      })
-    ).json()) as { matches: Array<{ title: string }> }
-    expect(inB.matches.map((m) => m.title)).toEqual(['B'])
+    const inB = await searchUntil<{ matches: Array<{ title: string }> }>(
+      b,
+      { query: 'banana' },
+      (body) => body.matches.length > 0
+    )
+    expect(inB.matches.map((match) => match.title)).toEqual(['B'])
   })
 
   it('rejects an invalid namespace', async () => {
-    const res = await call('/bad%20ns/documents/x', {
+    const response = await call('/bad%20ns/documents/x', {
       method: 'PUT',
       body: JSON.stringify({ title: 't', content: 'c' })
     })
-    expect(res.status).toBe(400)
+    expect(response.status).toEqual(400)
   })
 
   it('rejects an unauthenticated request', async () => {
     const ns = `test-${crypto.randomUUID()}`
-    const req = new Request(`http://test/${ns}/search`, {
+    const request = new Request(`http://test/${ns}/search`, {
       method: 'POST',
       body: JSON.stringify({ query: 'x' }),
       headers: { 'content-type': 'application/json' }
     })
     const ctx = createExecutionContext()
-    const res = await app.fetch(req, env, ctx)
+    const response = await app.fetch(request, env, ctx)
     await waitOnExecutionContext(ctx)
-    expect(res.status).toBe(401)
+    expect(response.status).toEqual(401)
   })
 })

@@ -19,21 +19,26 @@ export const search = factory.createHandlers(
       filter: filter as VectorizeVectorMetadataFilter | undefined,
       namespace: ns,
       returnMetadata: 'all',
-      topK: topK ?? 10,
+      topK: topK ?? 10
     })
 
     const prefix = `${ns}:`
 
     return context.json({
-      matches: result.matches.map((match) => ({
-        content: match.metadata?.content,
-        key: match.id.startsWith(prefix)
-          ? match.id.slice(prefix.length)
-          : match.id,
-        metadata: match.metadata,
-        score: match.score,
-        title: match.metadata?.title
-      }))
+      matches: result.matches.map((match) => {
+        const { title, content, ...metadata } = (match.metadata ??
+          {}) as Record<string, unknown>
+
+        return {
+          content,
+          key: match.id.startsWith(prefix)
+            ? match.id.slice(prefix.length)
+            : match.id,
+          metadata,
+          score: match.score,
+          title
+        }
+      })
     })
   }
 )

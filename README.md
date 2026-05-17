@@ -94,6 +94,34 @@ curl -X PUT http://localhost:8787/blog/documents/post-1 \
 { "namespace": "blog", "key": "post-1", "status": "upserted" }
 ```
 
+### `GET /:namespace/documents/:key` — fetch one
+
+Returns the document stored under `:key` in `:namespace`. Useful for inspecting
+what's actually in the index without running a search.
+
+**Example**
+
+```sh
+curl http://localhost:8787/blog/documents/post-1 \
+  -H "Authorization: Bearer $API_TOKEN"
+```
+
+**Response — `200 OK`**
+
+```json
+{
+  "document": {
+    "namespace": "blog",
+    "key": "post-1",
+    "title": "Hybrid search on Cloudflare",
+    "content": "Using Workers AI and Vectorize together…",
+    "metadata": { "type": "blog", "author": "art" }
+  }
+}
+```
+
+If the document doesn't exist, returns `404` with `error: "not_found"`.
+
 ### `POST /:namespace/search` — search
 
 Embeds `query`, runs a vector similarity search scoped to `:namespace`, and
@@ -142,12 +170,7 @@ curl -X POST http://localhost:8787/blog/search \
       "score": 0.87,
       "title": "Hybrid search on Cloudflare",
       "content": "Using Workers AI and Vectorize together…",
-      "metadata": {
-        "title": "…",
-        "content": "…",
-        "type": "blog",
-        "author": "art"
-      }
+      "metadata": { "type": "blog", "author": "art" }
     }
   ]
 }
@@ -164,13 +187,14 @@ All errors share one shape:
 { "error": "<code>", "message": "<human-readable explanation>" }
 ```
 
-| HTTP | `error`             | When                                                            |
-| ---- | ------------------- | --------------------------------------------------------------- |
-| 400  | `invalid_json`      | Request body isn't valid JSON.                                  |
-| 400  | `invalid_namespace` | `:namespace` doesn't match `[a-zA-Z0-9_-]{1,63}`.               |
-| 400  | `invalid_body`      | A body field fails validation (Zod). `message` names the field. |
-| 401  | `unauthorized`      | Missing or wrong `Authorization: Bearer …` header.              |
-| 500  | `internal_error`    | Unexpected error. Check the Worker logs.                        |
+| HTTP | `error`             | When                                                                  |
+| ---- | ------------------- | --------------------------------------------------------------------- |
+| 400  | `invalid_json`      | Request body isn't valid JSON.                                        |
+| 400  | `invalid_namespace` | `:namespace` doesn't match `[a-zA-Z0-9_-]{1,63}`.                     |
+| 400  | `invalid_body`      | A body field fails validation (Zod). `message` names the field.       |
+| 401  | `unauthorized`      | Missing or wrong `Authorization: Bearer …` header.                    |
+| 404  | `not_found`         | `GET /:namespace/documents/:key` for a key that hasn't been upserted. |
+| 500  | `internal_error`    | Unexpected error. Check the Worker logs.                              |
 
 ## Notes
 
